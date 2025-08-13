@@ -1,0 +1,60 @@
+name: Build Stencil Theme Bundle
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-bundle:
+    runs-on: ubuntu-latest
+
+    env:
+      BUNDLE_NAME: ${{ github.event.repository.name }}-${{ github.sha }}.zip
+      BUNDLE_OUT_DIR: dist
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node (LTS/Active)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # You can also use the marketplace action "stencil-action", but a global install is simplest.
+      - name: Install Stencil CLI
+        run: npm i -g @bigcommerce/stencil-cli
+
+      # Build the production bundle ZIP
+      - name: Bundle theme
+        run: |
+          mkdir -p "$BUNDLE_OUT_DIR"
+          stencil bundle --dest "$BUNDLE_OUT_DIR" --name "$BUNDLE_NAME"
+
+      # Optional: fail if bundle is too large for upload (docs recommend ≤ 50 MB)
+      - name: Enforce max bundle size (50 MB)
+        run: |
+          BUNDLE_PATH="$BUNDLE_OUT_DIR/$BUNDLE_NAME"
+          BYTES=$(stat -c%s "$BUNDLE_PATH")
+          MAX=$((50 * 1024 * 1024))
+          if [ "$BYTES" -gt "$MAX" ]; then
+            echo "Bundle is larger than 50 MB ($BYTES bytes). Please optimize assets."
+            exit 1
+          fi
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stencil-theme-bundle
+          path: ${{ env.BUNDLE_OUT_DIR }}/${{ env.BUNDLE_NAME }}
+          if-no-files-found: error
